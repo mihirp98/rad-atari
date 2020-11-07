@@ -34,13 +34,6 @@ def run(args):
 
     agent.run()
 
-    # with rad head
-    ################################################################################
-
-    # agent.rad_run()
-
-    ################################################################################
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
