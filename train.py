@@ -30,7 +30,7 @@ def run(args):
     Agent = SacdAgent if not args.shared else SharedSacdAgent
     agent = Agent(
         env=env, test_env=test_env, log_dir=log_dir, cuda=args.cuda,
-        seed=args.seed, rad_flag = True, **config)
+        seed=args.seed, rad_flag = False, **config)
 
     agent.run()
 

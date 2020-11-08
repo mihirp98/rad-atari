@@ -1,3 +1,8 @@
+# Changes for CIS700
+- `train.py` line 31 now includes a flag, `rad_flag` which is set true if data-augmentation is to be used.
+- [`base.py`](sacd/agent/base.py) line 52 incorporates the replay buffer from rad (mihir: need to set `image_size` and `pre_image_size` to appropriate values here)
+- line 308-309 includes the "crop" augmentation as of now.
+
 # SAC-Discrete in PyTorch
 This is a PyTorch implementation of SAC-Discrete[[1]](#references). I tried to make it easy for readers to understand the algorithm. Please let me know if you have any questions.
 
