@@ -25,3 +25,16 @@ class RunningMeanStats:
 
     def get(self):
         return np.mean(self.stats)
+
+
+def center_crop_image(image, output_size):
+    # print(image.shape)
+    # print(image.shape[-2:])
+    h, w = image.shape[-2:]
+    new_h, new_w = output_size, output_size
+
+    top = (h - new_h)//2
+    left = (w - new_w)//2
+
+    image = image[:, :, top:top + new_h, left:left + new_w]
+    return image

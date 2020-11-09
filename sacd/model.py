@@ -3,6 +3,8 @@ import torch.nn as nn
 from torch.nn import functional as F
 from torch.distributions import Categorical
 
+STATE_SIZE = 2304
+# STATE_SIZE = 7 * 7 * 64
 
 def initialize_weights_he(m):
     if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
@@ -54,16 +56,16 @@ class QNetwork(BaseNetwork):
 
         if not dueling_net:
             self.head = nn.Sequential(
-                nn.Linear(7 * 7 * 64, 512),
+                nn.Linear(STATE_SIZE, 512),
                 nn.ReLU(inplace=True),
                 nn.Linear(512, num_actions))
         else:
             self.a_head = nn.Sequential(
-                nn.Linear(7 * 7 * 64, 512),
+                nn.Linear(STATE_SIZE, 512),
                 nn.ReLU(inplace=True),
                 nn.Linear(512, num_actions))
             self.v_head = nn.Sequential(
-                nn.Linear(7 * 7 * 64, 512),
+                nn.Linear(STATE_SIZE, 512),
                 nn.ReLU(inplace=True),
                 nn.Linear(512, 1))
 
@@ -75,6 +77,7 @@ class QNetwork(BaseNetwork):
             states = self.conv(states)
 
         if not self.dueling_net:
+            # print(states.shape)
             return self.head(states)
         else:
             a = self.a_head(states)
@@ -102,8 +105,10 @@ class CateoricalPolicy(BaseNetwork):
         if not shared:
             self.conv = DQNBase(num_channels)
 
+        # print(STATE_SIZE)
+
         self.head = nn.Sequential(
-            nn.Linear(7 * 7 * 64, 512),
+            nn.Linear(STATE_SIZE, 512),
             nn.ReLU(inplace=True),
             nn.Linear(512, num_actions))
 
@@ -121,6 +126,9 @@ class CateoricalPolicy(BaseNetwork):
     def sample(self, states):
         if not self.shared:
             states = self.conv(states)
+
+        # print('problem states', states.shape)
+        # x = self.head(states)
 
         action_probs = F.softmax(self.head(states), dim=1)
         action_dist = Categorical(action_probs)

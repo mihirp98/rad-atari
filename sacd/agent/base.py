@@ -8,7 +8,11 @@ import sacd.agent.rad_utils as rad_utils
 import sacd.agent.data_augs as rad
 
 from sacd.memory import LazyMultiStepMemory, LazyPrioritizedMultiStepMemory
-from sacd.utils import update_params, RunningMeanStats
+from sacd.utils import update_params, RunningMeanStats, center_crop_image
+
+import matplotlib.pyplot as plt
+
+import sys
 
 
 class BaseAgent(ABC):
@@ -31,6 +35,10 @@ class BaseAgent(ABC):
         self.rad_flag = rad_flag
         # torch.backends.cudnn.deterministic = True  # It harms a performance.
         # torch.backends.cudnn.benchmark = False  # It harms a performance.
+
+        # print(self.env.action_space.shape)
+
+
 
         self.device = torch.device(
             "cuda" if cuda and torch.cuda.is_available() else "cpu")
@@ -87,10 +95,19 @@ class BaseAgent(ABC):
         self.log_interval = log_interval
         self.eval_interval = eval_interval
 
+
+        self.num_steps = 300000
+
+
+
+        #testing only
+        # self.start_steps = 1000
+        # self.num_eval_steps = 1000
+
     def run(self):
         if self.rad_flag:
             self.rad_run()
-        else: 
+        else:
             while True:
                 self.train_episode()
                 if self.steps > self.num_steps:
@@ -145,15 +162,20 @@ class BaseAgent(ABC):
 
         done = False
         state = self.env.reset()
+        # print("update interval", self.update_interval)
+        # print("target update", self.target_update_interval)
+        # print("eval update", self.eval_interval)
 
         while (not done) and episode_steps <= self.max_episode_steps:
-
             if self.start_steps > self.steps:
                 action = self.env.action_space.sample()
             else:
+                print("EXPLORING")
                 action = self.explore(state)
 
             next_state, reward, done, _ = self.env.step(action)
+            # print(type(next_state))
+            # break
 
             # Clip reward to [-1.0, 1.0].
             clipped_reward = max(min(reward, 1.0), -1.0)
@@ -167,14 +189,17 @@ class BaseAgent(ABC):
             state = next_state
 
             if self.is_update():
+                print("learning")
                 self.learn()
 
             if self.steps % self.target_update_interval == 0:
+                print("updating target")
                 self.update_target()
 
-            if self.steps % self.eval_interval == 0:
-                self.evaluate()
-                self.save_models(os.path.join(self.model_dir, 'final'))
+            # if self.steps % self.eval_interval == 0:
+            #     print("eval")
+            #     self.evaluate()
+            #     self.save_models(os.path.join(self.model_dir, 'final'))
 
         # We log running mean of training rewards.
         self.train_return.append(episode_return)
@@ -185,7 +210,70 @@ class BaseAgent(ABC):
 
         print(f'Episode: {self.episodes:<4}  '
               f'Episode steps: {episode_steps:<4}  '
-              f'Return: {episode_return:<5.1f}')
+              f'Return: {episode_return:<5.1f}'
+              f'Total steps: {self.steps:<4}')
+
+
+
+    def learn(self):
+        assert hasattr(self, 'q1_optim') and hasattr(self, 'q2_optim') and\
+            hasattr(self, 'policy_optim') and hasattr(self, 'alpha_optim')
+
+        self.learning_steps += 1
+
+        if self.use_per:
+            batch, weights = self.memory.sample(self.batch_size)
+        else:
+            batch = self.memory.sample(self.batch_size)
+            # Set priority weights to 1 when we don't use PER.
+            weights = 1.
+
+        # print(batch.shape)
+        # print(len(batch))
+        # print(batch[0].shape)
+        # print(self.env._obs_type)
+
+        # plt.imshow(batch[0][0, 0, :, :])
+        # plt.show()
+
+        q1_loss, q2_loss, errors, mean_q1, mean_q2 = \
+            self.calc_critic_loss(batch, weights)
+        policy_loss, entropies = self.calc_policy_loss(batch, weights)
+        entropy_loss = self.calc_entropy_loss(entropies, weights)
+
+        update_params(self.q1_optim, q1_loss)
+        update_params(self.q2_optim, q2_loss)
+        update_params(self.policy_optim, policy_loss)
+        update_params(self.alpha_optim, entropy_loss)
+
+        self.alpha = self.log_alpha.exp()
+
+        if self.use_per:
+            self.memory.update_priority(errors)
+
+        if self.learning_steps % self.log_interval == 0:
+            self.writer.add_scalar(
+                'loss/Q1', q1_loss.detach().item(),
+                self.learning_steps)
+            self.writer.add_scalar(
+                'loss/Q2', q2_loss.detach().item(),
+                self.learning_steps)
+            self.writer.add_scalar(
+                'loss/policy', policy_loss.detach().item(),
+                self.learning_steps)
+            self.writer.add_scalar(
+                'loss/alpha', entropy_loss.detach().item(),
+                self.learning_steps)
+            self.writer.add_scalar(
+                'stats/alpha', self.alpha.detach().item(),
+                self.learning_steps)
+            self.writer.add_scalar(
+                'stats/mean_Q1', mean_q1, self.learning_steps)
+            self.writer.add_scalar(
+                'stats/mean_Q2', mean_q2, self.learning_steps)
+            self.writer.add_scalar(
+                'stats/entropy', entropies.detach().mean().item(),
+                self.learning_steps)
 
     def rad_train_episode(self):
         self.episodes += 1
@@ -234,59 +322,8 @@ class BaseAgent(ABC):
 
         print(f'Episode: {self.episodes:<4}  '
               f'Episode steps: {episode_steps:<4}  '
-              f'Return: {episode_return:<5.1f}')
-
-    def learn(self):
-        assert hasattr(self, 'q1_optim') and hasattr(self, 'q2_optim') and\
-            hasattr(self, 'policy_optim') and hasattr(self, 'alpha_optim')
-
-        self.learning_steps += 1
-
-        if self.use_per:
-            batch, weights = self.memory.sample(self.batch_size)
-        else:
-            batch = self.memory.sample(self.batch_size)
-            # Set priority weights to 1 when we don't use PER.
-            weights = 1.
-
-        q1_loss, q2_loss, errors, mean_q1, mean_q2 = \
-            self.calc_critic_loss(batch, weights)
-        policy_loss, entropies = self.calc_policy_loss(batch, weights)
-        entropy_loss = self.calc_entropy_loss(entropies, weights)
-
-        update_params(self.q1_optim, q1_loss)
-        update_params(self.q2_optim, q2_loss)
-        update_params(self.policy_optim, policy_loss)
-        update_params(self.alpha_optim, entropy_loss)
-
-        self.alpha = self.log_alpha.exp()
-
-        if self.use_per:
-            self.memory.update_priority(errors)
-
-        if self.learning_steps % self.log_interval == 0:
-            self.writer.add_scalar(
-                'loss/Q1', q1_loss.detach().item(),
-                self.learning_steps)
-            self.writer.add_scalar(
-                'loss/Q2', q2_loss.detach().item(),
-                self.learning_steps)
-            self.writer.add_scalar(
-                'loss/policy', policy_loss.detach().item(),
-                self.learning_steps)
-            self.writer.add_scalar(
-                'loss/alpha', entropy_loss.detach().item(),
-                self.learning_steps)
-            self.writer.add_scalar(
-                'stats/alpha', self.alpha.detach().item(),
-                self.learning_steps)
-            self.writer.add_scalar(
-                'stats/mean_Q1', mean_q1, self.learning_steps)
-            self.writer.add_scalar(
-                'stats/mean_Q2', mean_q2, self.learning_steps)
-            self.writer.add_scalar(
-                'stats/entropy', entropies.detach().mean().item(),
-                self.learning_steps)
+              f'Return: {episode_return:<5.1f}'
+              f'Total steps: {self.steps:<4}')
 
     def rad_learn(self):
         assert hasattr(self, 'q1_optim') and hasattr(self, 'q2_optim') and\
@@ -316,6 +353,12 @@ class BaseAgent(ABC):
             batch = self.memory.sample_rad(augs_funcs)
             # Set priority weights to 1 when we don't use PER.
             weights = 1.
+
+        # print(batch[0].shape)
+        # plt.imshow(batch[0][0, 0, :, :])
+        # plt.figure()
+        # plt.imshow(batch[0][1, 0, :, :])
+        # plt.show()
 
         q1_loss, q2_loss, errors, mean_q1, mean_q2 = \
             self.calc_critic_loss(batch, weights)
@@ -362,6 +405,9 @@ class BaseAgent(ABC):
         total_return = 0.0
 
         while True:
+            percent_eval = round(100.0 * num_steps / self.num_eval_steps, 2)
+            sys.stdout.write("Evaluation progress: %d%%   \r" % (percent_eval) )
+            sys.stdout.flush()
             state = self.test_env.reset()
             episode_steps = 0
             episode_return = 0.0

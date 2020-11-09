@@ -4,7 +4,7 @@ import pdb
 import argparse
 from datetime import datetime
 
-from sacd.env import make_pytorch_env
+from sacd.env import make_pytorch_env, make_breakout_env
 from sacd.agent import SacdAgent, SharedSacdAgent
 
 
@@ -13,10 +13,15 @@ def run(args):
         config = yaml.load(f, Loader=yaml.SafeLoader)
 
     # Create environments.
-    env = make_pytorch_env(args.env_id, clip_rewards=False)
+    # env = make_pytorch_env(args.env_id, clip_rewards=False)
+    env = make_breakout_env(args.env_id, clip_rewards=False)
+    # print(type(env))
+    print(env.n_frames)
 
-    test_env = make_pytorch_env(
-        args.env_id, episode_life=False, clip_rewards=False)
+    # test_env = make_pytorch_env(
+    #     args.env_id, episode_life=False, clip_rewards=False)
+
+    test_env = make_breakout_env(args.env_id, clip_rewards=False)
 
     # Specify the directory to log.
     name = args.config.split('/')[-1].rstrip('.yaml')
@@ -30,7 +35,7 @@ def run(args):
     Agent = SacdAgent if not args.shared else SharedSacdAgent
     agent = Agent(
         env=env, test_env=test_env, log_dir=log_dir, cuda=args.cuda,
-        seed=args.seed, rad_flag = False, **config)
+        seed=args.seed, rad_flag = args.use_rad, **config)
 
     agent.run()
 
@@ -39,8 +44,9 @@ if __name__ == '__main__':
     parser.add_argument(
         '--config', type=str, default=os.path.join('config', 'sacd.yaml'))
     parser.add_argument('--shared', action='store_true')
-    parser.add_argument('--env_id', type=str, default='MsPacmanNoFrameskip-v4')
+    parser.add_argument('--env_id', type=str, default='BreakoutNoFrameskip-v0')
     parser.add_argument('--cuda', action='store_true')
     parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--use_rad', type=bool, default=False)
     args = parser.parse_args()
     run(args)

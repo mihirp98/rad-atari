@@ -6,8 +6,9 @@ import pdb
 
 from .base import BaseAgent
 from sacd.model import TwinnedQNetwork, CateoricalPolicy
-from sacd.utils import disable_gradients
+from sacd.utils import disable_gradients, center_crop_image
 
+CROP_VAL = 80
 
 class SacdAgent(BaseAgent):
 
@@ -18,7 +19,7 @@ class SacdAgent(BaseAgent):
                  use_per=False, dueling_net=False, num_eval_steps=125000,
                  max_episode_steps=27000, log_interval=10, eval_interval=1000,
                  cuda=True, rad_flag = False, seed=0):
-        
+
         super().__init__(
             env, test_env, log_dir, num_steps, batch_size, memory_size, gamma,
             multi_step, target_entropy_ratio, start_steps, update_interval,
@@ -29,6 +30,9 @@ class SacdAgent(BaseAgent):
         self.policy = CateoricalPolicy(
             self.env.observation_space.shape[0], self.env.action_space.n
             ).to(self.device)
+        # self.policy = CategoricalAug(
+        #     self.env.observation_space.shape[0], self.env.action_space.n
+        #     ).to(self.device)
         self.online_critic = TwinnedQNetwork(
             self.env.observation_space.shape[0], self.env.action_space.n,
             dueling_net=dueling_net).to(device=self.device)
@@ -59,6 +63,9 @@ class SacdAgent(BaseAgent):
         # Act with randomness.
         state = torch.ByteTensor(
             state[None, ...]).to(self.device).float() / 255.
+
+        state = center_crop_image(state, CROP_VAL)
+        # print("explore shape", state.shape)
         with torch.no_grad():
             action, _, _ = self.policy.sample(state)
         return action.item()
@@ -67,6 +74,7 @@ class SacdAgent(BaseAgent):
         # Act without randomness.
         state = torch.ByteTensor(
             state[None, ...]).to(self.device).float() / 255.
+        state = center_crop_image(state, CROP_VAL)
         with torch.no_grad():
             action = self.policy.act(state)
         return action.item()

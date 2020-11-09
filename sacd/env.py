@@ -277,6 +277,18 @@ def make_atari(env_id):
     env = MaxAndSkipEnv(env, skip=4)
     return env
 
+def make_breakout_image(env_id):
+    """
+    Create a wrapped atari envrionment
+    :param env_id: (str) the environment ID
+    :return: (Gym Environment) the wrapped atari environment
+    """
+    env = gym.make('BreakoutNoFrameskip-v0', obs_type='image')
+    assert 'NoFrameskip' in env.spec.id
+    env = NoopResetEnv(env, noop_max=30)
+    env = MaxAndSkipEnv(env, skip=4)
+    return env
+
 
 def wrap_deepmind_pytorch(env, episode_life=True, clip_rewards=True,
                           frame_stack=True, scale=False):
@@ -306,6 +318,13 @@ def wrap_deepmind_pytorch(env, episode_life=True, clip_rewards=True,
 def make_pytorch_env(env_id, episode_life=True, clip_rewards=True,
                      frame_stack=True, scale=False):
     env = make_atari(env_id)
+    env = wrap_deepmind_pytorch(
+        env, episode_life, clip_rewards, frame_stack, scale)
+    return env
+
+def make_breakout_env(env_id, episode_life=True, clip_rewards=True,
+                     frame_stack=True, scale=False):
+    env = make_breakout_image(env_id)
     env = wrap_deepmind_pytorch(
         env, episode_life, clip_rewards, frame_stack, scale)
     return env
